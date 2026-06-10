@@ -1,0 +1,425 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// ORGANIZATION / BUSINESS ACCOUNT
+// ─────────────────────────────────────────────
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  industry        Industry @default(HVAC)
+  phone           String?
+  email           String?
+  website         String?
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  logoUrl         String?
+  primaryColor    String   @default("#2563eb")
+  widgetEnabled   Boolean  @default(true)
+  widgetPosition  String   @default("bottom-right")
+  widgetGreeting  String   @default("Hi! How can we help you today?")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  members         OrgMember[]
+  leads           Lead[]
+  customers       Customer[]
+  campaigns       Campaign[]
+  automations     AutomationRule[]
+  subscription    Subscription?
+  apiKeys         ApiKey[]
+  landingPages    LandingPage[]
+
+  @@index([slug])
+}
+
+model OrgMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  clerkUserId    String       @unique
+  email          String
+  firstName      String?
+  lastName       String?
+  role           OrgRole      @default(MEMBER)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([clerkUserId])
+}
+
+// ─────────────────────────────────────────────
+// LEADS
+// ─────────────────────────────────────────────
+model Lead {
+  id              String      @id @default(cuid())
+  organizationId  String
+  firstName       String
+  lastName        String?
+  email           String?
+  phone           String?
+  source          LeadSource  @default(WEBSITE)
+  status          LeadStatus  @default(NEW)
+  urgency         Urgency     @default(MEDIUM)
+  score           Int         @default(0)
+  estimatedValue  Float?
+  serviceType     String?
+  notes           String?
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  isQualified     Boolean     @default(false)
+  isHighValue     Boolean     @default(false)
+  aiSummary       String?
+  aiSuggestedResponse String?
+  lastContactedAt DateTime?
+  appointmentDate DateTime?
+  convertedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activities      LeadActivity[]
+  messages        Message[]
+  qualificationAnswers QualificationAnswer[]
+  customer        Customer?   @relation(fields: [customerId], references: [id])
+  customerId      String?
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([score])
+  @@index([createdAt])
+}
+
+model LeadActivity {
+  id          String           @id @default(cuid())
+  leadId      String
+  type        ActivityType
+  description String
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+
+  lead        Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model Message {
+  id          String      @id @default(cuid())
+  leadId      String
+  direction   Direction
+  channel     Channel
+  content     String
+  isAiGenerated Boolean   @default(false)
+  sentAt      DateTime    @default(now())
+
+  lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model QualificationAnswer {
+  id          String   @id @default(cuid())
+  leadId      String
+  question    String
+  answer      String
+  createdAt   DateTime @default(now())
+
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+// ─────────────────────────────────────────────
+// CUSTOMERS (converted leads)
+// ─────────────────────────────────────────────
+model Customer {
+  id              String   @id @default(cuid())
+  organizationId  String
+  firstName       String
+  lastName        String?
+  email           String?
+  phone           String?
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  totalSpent      Float    @default(0)
+  jobCount        Int      @default(0)
+  lastJobDate     DateTime?
+  notes           String?
+  tags            String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads           Lead[]
+  jobs            Job[]
+
+  @@index([organizationId])
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  customerId  String
+  title       String
+  description String?
+  status      JobStatus @default(SCHEDULED)
+  value       Float?
+  scheduledAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+// ─────────────────────────────────────────────
+// CAMPAIGNS & AUTOMATION
+// ─────────────────────────────────────────────
+model Campaign {
+  id              String         @id @default(cuid())
+  organizationId  String
+  name            String
+  type            CampaignType
+  status          CampaignStatus @default(DRAFT)
+  subject         String?
+  body            String
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  recipientCount  Int            @default(0)
+  openCount       Int            @default(0)
+  clickCount      Int            @default(0)
+  replyCount      Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model AutomationRule {
+  id              String       @id @default(cuid())
+  organizationId  String
+  name            String
+  trigger         TriggerType
+  conditions      Json
+  actions         Json
+  isActive        Boolean      @default(true)
+  runCount        Int          @default(0)
+  lastRunAt       DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────
+// LANDING PAGES
+// ─────────────────────────────────────────────
+model LandingPage {
+  id              String   @id @default(cuid())
+  organizationId  String
+  slug            String
+  title           String
+  headline        String?
+  subheadline     String?
+  ctaText         String?
+  published       Boolean  @default(false)
+  viewCount       Int      @default(0)
+  leadCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────
+// BILLING / SUBSCRIPTIONS
+// ─────────────────────────────────────────────
+model Subscription {
+  id                   String             @id @default(cuid())
+  organizationId       String             @unique
+  stripeCustomerId     String             @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  plan                 PlanTier           @default(FREE)
+  status               SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  trialEndsAt          DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([stripeCustomerId])
+}
+
+// ─────────────────────────────────────────────
+// API KEYS
+// ─────────────────────────────────────────────
+model ApiKey {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  keyHash        String   @unique
+  lastUsedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+enum Industry {
+  HVAC
+  ROOFING
+  LANDSCAPING
+  PRESSURE_WASHING
+  HOME_CLEANING
+  CAR_DETAILING
+  AUTO_REPAIR
+  PAINTING
+  WINDOW_CLEANING
+  PLUMBING
+  ELECTRICAL
+  OTHER
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum LeadSource {
+  WEBSITE
+  CHAT_WIDGET
+  LANDING_PAGE
+  REFERRAL
+  SOCIAL_MEDIA
+  GOOGLE_ADS
+  FACEBOOK_ADS
+  ORGANIC_SEARCH
+  DIRECT_MAIL
+  PHONE
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  NEGOTIATING
+  CLOSED_WON
+  CLOSED_LOST
+  NURTURING
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum ActivityType {
+  CREATED
+  STATUS_CHANGED
+  NOTE_ADDED
+  EMAIL_SENT
+  SMS_SENT
+  CALL_LOGGED
+  APPOINTMENT_SCHEDULED
+  QUOTE_SENT
+  AI_QUALIFIED
+  SCORE_UPDATED
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum Channel {
+  EMAIL
+  SMS
+  CHAT
+  PHONE
+}
+
+enum JobStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  INVOICED
+  PAID
+}
+
+enum CampaignType {
+  EMAIL
+  SMS
+  SEQUENCE
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+}
+
+enum TriggerType {
+  LEAD_CREATED
+  LEAD_STATUS_CHANGED
+  LEAD_SCORE_THRESHOLD
+  NO_CONTACT_DAYS
+  APPOINTMENT_REMINDER
+  FOLLOW_UP_SCHEDULED
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  GROWTH
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+  INCOMPLETE
+}
