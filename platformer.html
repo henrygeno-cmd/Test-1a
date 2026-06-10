@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Platformer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #2b1a0e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  canvas {
+    border: 3px solid #6b3f1f;
+    border-radius: 4px;
+    box-shadow: 0 0 30px #6b3f1f88;
+    display: block;
+  }
+  #hud {
+    width: 900px;
+    display: flex;
+    justify-content: space-between;
+    color: #d4a055;
+    font-size: 18px;
+    padding: 6px 10px;
+    background: #3a200f;
+    border: 2px solid #6b3f1f;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+  }
+  #controls {
+    width: 900px;
+    text-align: center;
+    color: #7a5030;
+    font-size: 13px;
+    padding: 5px;
+    background: #3a200f;
+    border: 2px solid #6b3f1f;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <span id="score">Score: 0000</span>
+  <span id="lives">❤️ ❤️ ❤️</span>
+</div>
+<canvas id="c" width="900" height="500"></canvas>
+<div id="controls">Arrow Keys / WASD to move &nbsp;|&nbsp; Space / W / ↑ to jump &nbsp;|&nbsp; Stomp enemies from above!</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ── Palette ──────────────────────────────────────────────────────────────────
+const COL = {
+  sky:        '#3b1f0a',
+  skyFar:     '#4e2a10',
+  ground:     '#6b3f1f',
+  groundTop:  '#8b5c2a',
+  platform:   '#7a4820',
+  platformTop:'#a06030',
+  player:     '#d4a055',
+  playerOut:  '#7a4010',
+  enemy:      '#c0392b',
+  enemyOut:   '#7b241c',
+  coin:       '#f0c040',
+  coinShine:  '#fff8c0',
+  flag:       '#e8c060',
+  flagPole:   '#a07030',
+  hud:        '#d4a055',
+  winText:    '#f0c040',
+  loseText:   '#c0392b',
+  star:       '#e8d070',
+};
+
+// ── Tile / world constants ────────────────────────────────────────────────────
+const TILE   = 20;   // px per tile
+const COLS   = W / TILE;   // 45 tiles wide
+const ROWS   = H / TILE;   // 25 tiles tall
+
+// Physics (tiles/s or tiles/s²)
+const GRAVITY    = 28;
+const JUMP_V     = -11;
+const WALK_SPD   = 7;
+const ENEMY_SPD  = 2.5;
+const FPS_TARGET = 60;
+
+// ── Level data (tile coords) ──────────────────────────────────────────────────
+// Platforms: [col, row, widthInTiles]
+const PLATFORMS = [
+  [0,  24, 45],   // ground
+  [2,  20,  5],
+  [9,  17,  6],
+  [18, 19,  5],
+  [25, 16,  7],
+  [34, 20,  5],
+  [38, 17,  5],
+  [5,  13,  6],
+  [14, 14,  5],
+  [24, 12,  6],
+  [32, 14,  5],
+  [38, 11,  5],
+  [10,  8,  7],
+  [20,  9,  6],
+  [30,  7,  7],
+  [15,  4, 15],   // goal platform
+];
+
+// Coins: [col, row]
+const COIN_DATA = [
+  [3,19],[4,19],[5,19],
+  [10,16],[11,16],[13,16],
+  [19,18],[20,18],[21,18],
+  [26,15],[27,15],[29,15],[30,15],
+  [35,19],[36,19],
+  [39,16],[40,16],[41,16],
+  [6,12],[7,12],[9,12],
+  [15,13],[16,13],[17,13],
+  [25,11],[26,11],[28,11],[29,11],
+  [33,13],[34,13],
+  [39,10],[40,10],[42,10],
+  [11,7],[12,7],[14,7],[15,7],
+  [21,8],[22,8],[24,8],
+  [31,6],[32,6],[34,6],[35,6],
+  [17,3],[19,3],[21,3],[23,3],[25,3],[27,3],
+];
+
+// Enemies: [col, row, leftBound, rightBound]
+const ENEMY_DATA = [
+  [3,  23, 1,  6],
+  [10, 16, 9,  13],
+  [26, 15, 25, 30],
+  [35, 19, 34, 37],
+  [39, 16, 38, 41],
+  [6,  12, 5,  10],
+  [15, 13, 14, 18],
+  [25, 11, 24, 29],
+  [31, 14, 30, 34],
+  [11,  7, 10, 16],
+  [22,  8, 20, 25],
+  [32,  6, 30, 36],
+];
+
+const GOAL = { col: 22, row: 3 };
+
+// ── Background stars ──────────────────────────────────────────────────────────
+const STARS = Array.from({length: 60}, () => ({
+  x: Math.random() * W,
+  y: Math.random() * H * 0.7,
+  r: Math.random() * 1.2 + 0.3,
+}));
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let player, coins, enemies, won, gameOver, particles;
+
+function initState() {
+  player = {
+    x: 2 * TILE, y: 23 * TILE,
+    vx: 0, vy: 0,
+    w: TILE - 2, h: TILE - 2,
+    onGround: false,
+    lives: 3,
+    score: 0,
+    invTimer: 0,
+    facing: 1,
+    walkFrame: 0, walkTimer: 0,
+  };
+  coins    = COIN_DATA.map(([c, r]) => ({ x: c * TILE, y: r * TILE, collected: false, bob: Math.random() * Math.PI * 2 }));
+  enemies  = ENEMY_DATA.map(([c, r, l, rt]) => ({
+    x: c * TILE, y: r * TILE,
+    vx: ENEMY_SPD,
+    left: l * TILE, right: rt * TILE,
+    alive: true,
+    walkFrame: 0, walkTimer: 0,
+  }));
+  won      = false;
+  gameOver = false;
+  particles = [];
+}
+
+// ── Platform helpers ──────────────────────────────────────────────────────────
+function getPlatform(col, row) {
+  for (const [pc, pr, pw] of PLATFORMS) {
+    if (pr === row && col >= pc && col < pc + pw) return [pc, pr, pw];
+  }
+  return null;
+}
+
+function collidesWithPlatform(x, y, w, h) {
+  // Returns the platform row the entity should land on, or -1
+  const left  = Math.floor(x / TILE);
+  const right = Math.floor((x + w - 1) / TILE);
+  const bottom = Math.floor((y + h) / TILE);
+  const top    = Math.floor(y / TILE);
+
+  // Landing check (feet)
+  for (let c = left; c <= right; c++) {
+    if (getPlatform(c, bottom)) return bottom;
+  }
+  return -1;
+}
+
+function headBump(x, y, w) {
+  const left  = Math.floor(x / TILE);
+  const right = Math.floor((x + w - 1) / TILE);
+  const top   = Math.floor(y / TILE);
+  for (let c = left; c <= right; c++) {
+    if (getPlatform(c, top)) return true;
+  }
+  return false;
+}
+
+// ── Particles ─────────────────────────────────────────────────────────────────
+function spawnParticles(x, y, color, n = 8) {
+  for (let i = 0; i < n; i++) {
+    const angle = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+    const speed = 60 + Math.random() * 80;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 40,
+      life: 1.0,
+      color,
+      r: 3 + Math.random() * 3,
+    });
+  }
+}
+
+// ── Input ─────────────────────────────────────────────────────────────────────
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.code] = true;  e.preventDefault(); });
+window.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+function isLeft()  { return keys['ArrowLeft']  || keys['KeyA']; }
+function isRight() { return keys['ArrowRight'] || keys['KeyD']; }
+function isJump()  { return keys['ArrowUp'] || keys['KeyW'] || keys['Space']; }
+
+// ── Update ────────────────────────────────────────────────────────────────────
+let jumpPressed = false;
+
+function update(dt) {
+  if (won || gameOver) return;
+
+  const p = player;
+
+  // horizontal movement
+  p.vx = 0;
+  if (isLeft())  { p.vx = -WALK_SPD * TILE * dt; p.facing = -1; }
+  if (isRight()) { p.vx =  WALK_SPD * TILE * dt; p.facing =  1; }
+
+  // walk animation
+  if (p.vx !== 0) {
+    p.walkTimer += dt;
+    if (p.walkTimer > 0.1) { p.walkFrame = (p.walkFrame + 1) % 4; p.walkTimer = 0; }
+  } else {
+    p.walkFrame = 0;
+  }
+
+  // jump
+  const jumpNow = isJump();
+  if (jumpNow && !jumpPressed && p.onGround) {
+    p.vy = JUMP_V * TILE;
+    p.onGround = false;
+  }
+  jumpPressed = jumpNow;
+
+  // gravity
+  p.vy += GRAVITY * TILE * dt;
+
+  // move X
+  p.x = Math.max(0, Math.min(p.x + p.vx, W - p.w));
+
+  // move Y
+  p.y += p.vy * dt;
+  p.onGround = false;
+
+  // platform Y collision
+  if (p.vy >= 0) {
+    const landRow = collidesWithPlatform(p.x, p.y, p.w, p.h);
+    if (landRow >= 0) {
+      p.y = landRow * TILE - p.h;
+      p.vy = 0;
+      p.onGround = true;
+    }
+  } else {
+    // head bump
+    if (headBump(p.x, p.y, p.w)) p.vy = 1;
+  }
+
+  // fall off bottom
+  if (p.y > H + TILE) {
+    p.lives--;
+    spawnParticles(p.x + p.w / 2, H / 2, COL.loseText, 12);
+    if (p.lives <= 0) { gameOver = true; return; }
+    p.x = 2 * TILE; p.y = 23 * TILE;
+    p.vx = p.vy = 0;
+    p.invTimer = 2.0;
+  }
+
+  // invincibility
+  if (p.invTimer > 0) p.invTimer -= dt;
+
+  // coins
+  for (const c of coins) {
+    if (c.collected) continue;
+    c.bob += dt * 3;
+    if (Math.abs(p.x - c.x) < TILE && Math.abs(p.y - c.y) < TILE) {
+      c.collected = true;
+      p.score += 10;
+      spawnParticles(c.x + TILE / 2, c.y + TILE / 2, COL.coin, 6);
+    }
+  }
+
+  // goal
+  if (Math.abs(p.x - GOAL.col * TILE) < TILE && Math.abs(p.y - GOAL.row * TILE) < TILE) {
+    won = true;
+    spawnParticles(p.x, p.y, COL.winText, 20);
+    return;
+  }
+
+  // enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+
+    e.x += e.vx * TILE * dt;
+    if (e.x <= e.left)  { e.x = e.left;  e.vx =  ENEMY_SPD; }
+    if (e.x >= e.right) { e.x = e.right; e.vx = -ENEMY_SPD; }
+
+    e.walkTimer += dt;
+    if (e.walkTimer > 0.15) { e.walkFrame = (e.walkFrame + 1) % 4; e.walkTimer = 0; }
+
+    if (p.invTimer > 0) continue;
+    const dx = Math.abs(p.x - e.x);
+    const dy = Math.abs(p.y - e.y);
+    if (dx < TILE * 0.8 && dy < TILE * 0.8) {
+      // stomp
+      if (p.vy > 0 && p.y + p.h <= e.y + TILE * 0.6) {
+        e.alive = false;
+        p.vy = JUMP_V * TILE * 0.55;
+        p.score += 50;
+        spawnParticles(e.x + TILE / 2, e.y + TILE / 2, COL.enemy, 10);
+      } else {
+        p.lives--;
+        spawnParticles(p.x + p.w / 2, p.y + p.h / 2, COL.loseText, 10);
+        if (p.lives <= 0) { gameOver = true; return; }
+        p.x = 2 * TILE; p.y = 23 * TILE;
+        p.vx = p.vy = 0;
+        p.invTimer = 2.0;
+        return;
+      }
+    }
+  }
+
+  // particles
+  for (const pt of particles) {
+    pt.x += pt.vx * dt;
+    pt.y += pt.vy * dt;
+    pt.vy += 200 * dt;
+    pt.life -= dt * 1.5;
+  }
+  particles = particles.filter(pt => pt.life > 0);
+}
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+function drawRoundRect(x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  if (fill)   { ctx.fillStyle = fill;   ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
+}
+
+function drawBackground() {
+  // sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,   '#1a0d05');
+  grad.addColorStop(0.6, '#3b1f0a');
+  grad.addColorStop(1,   '#4e2a10');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // stars
+  ctx.fillStyle = COL.star;
+  for (const s of STARS) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawPlatforms() {
+  for (const [pc, pr, pw] of PLATFORMS) {
+    const x = pc * TILE, y = pr * TILE, w = pw * TILE, h = TILE;
+    // body
+    drawRoundRect(x, y, w, h, 3, COL.platform, null);
+    // top highlight strip
+    ctx.fillStyle = COL.platformTop;
+    ctx.fillRect(x + 2, y + 1, w - 4, 4);
+    // wood grain lines
+    ctx.strokeStyle = '#5a3010';
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i < pw; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + i * TILE + TILE / 2, y + 5);
+      ctx.lineTo(x + i * TILE + TILE / 2, y + h - 2);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawCoins(t) {
+  for (const c of coins) {
+    if (c.collected) continue;
+    const cx = c.x + TILE / 2;
+    const cy = c.y + TILE / 2 + Math.sin(c.bob) * 3;
+    const r  = TILE * 0.35;
+
+    // glow
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.8);
+    glow.addColorStop(0,   '#f0c04055');
+    glow.addColorStop(1,   'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // coin body
+    const cg = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+    cg.addColorStop(0, COL.coinShine);
+    cg.addColorStop(0.4, COL.coin);
+    cg.addColorStop(1, '#a07000');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawGoal() {
+  const x = GOAL.col * TILE + TILE / 2;
+  const y = GOAL.row * TILE;
+
+  // pole
+  ctx.strokeStyle = COL.flagPole;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y - TILE * 1.5);
+  ctx.stroke();
+
+  // flag
+  ctx.fillStyle = COL.flag;
+  ctx.beginPath();
+  ctx.moveTo(x, y - TILE * 1.5);
+  ctx.lineTo(x + TILE * 0.8, y - TILE * 1.15);
+  ctx.lineTo(x, y - TILE * 0.8);
+  ctx.fill();
+}
+
+function drawEnemy(e) {
+  if (!e.alive) return;
+  const x = e.x + 2, y = e.y + 2, s = TILE - 4;
+
+  // body
+  const eg = ctx.createLinearGradient(x, y, x, y + s);
+  eg.addColorStop(0, '#e05040');
+  eg.addColorStop(1, COL.enemy);
+  drawRoundRect(x, y, s, s, 4, eg, COL.enemyOut);
+
+  // eyes
+  ctx.fillStyle = '#fff';
+  const eyeY = y + s * 0.25;
+  ctx.beginPath(); ctx.arc(x + s * 0.28, eyeY, s * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + s * 0.72, eyeY, s * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#200';
+  const pupilOff = e.vx > 0 ? 1.5 : -1.5;
+  ctx.beginPath(); ctx.arc(x + s * 0.28 + pupilOff, eyeY, s * 0.06, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + s * 0.72 + pupilOff, eyeY, s * 0.06, 0, Math.PI * 2); ctx.fill();
+
+  // angry brows
+  ctx.strokeStyle = '#500'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x + s * 0.16, eyeY - s * 0.15);
+  ctx.lineTo(x + s * 0.42, eyeY - s * 0.08);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + s * 0.84, eyeY - s * 0.15);
+  ctx.lineTo(x + s * 0.58, eyeY - s * 0.08);
+  ctx.stroke();
+
+  // feet
+  const legOff = [0, 1, 2, 1][e.walkFrame] * 2;
+  ctx.fillStyle = COL.enemyOut;
+  ctx.fillRect(x + s * 0.15, y + s - 2, s * 0.25, 4 + legOff);
+  ctx.fillRect(x + s * 0.60, y + s - 2, s * 0.25, 4 + (4 - legOff));
+}
+
+function drawPlayer(p, t) {
+  if (p.invTimer > 0 && Math.floor(t * 10) % 2 === 0) return;
+
+  const x = p.x + 1, y = p.y + 1, s = p.w, h = p.h;
+
+  // body
+  const pg = ctx.createLinearGradient(x, y, x, y + h);
+  pg.addColorStop(0, '#e8b870');
+  pg.addColorStop(1, '#b07030');
+  drawRoundRect(x, y, s, h, 4, pg, COL.playerOut);
+
+  // hat
+  ctx.fillStyle = '#6b3f1f';
+  ctx.fillRect(x, y - 5, s, 5);
+  ctx.fillRect(x - 3, y - 6, s + 6, 3);
+
+  // face
+  ctx.fillStyle = '#f0d0a0';
+  ctx.fillRect(x + 3, y + 4, s - 6, h * 0.45);
+
+  // eye
+  const eyeX = p.facing > 0 ? x + s - 7 : x + 4;
+  ctx.fillStyle = '#3a1a00';
+  ctx.beginPath(); ctx.arc(eyeX, y + 8, 2, 0, Math.PI * 2); ctx.fill();
+
+  // moustache
+  ctx.fillStyle = '#5a2a00';
+  ctx.fillRect(x + 3, y + 11, s - 6, 3);
+
+  // legs
+  const legBob = [0, 2, 0, -2][p.walkFrame] * (p.vx !== 0 ? 1 : 0);
+  ctx.fillStyle = '#5a3010';
+  ctx.fillRect(x + 2,     y + h - 2, s * 0.35, 5 + legBob);
+  ctx.fillRect(x + s - 2 - s * 0.35, y + h - 2, s * 0.35, 5 - legBob);
+}
+
+function drawParticles() {
+  for (const pt of particles) {
+    ctx.globalAlpha = Math.max(0, pt.life);
+    ctx.fillStyle = pt.color;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawOverlay(t) {
+  if (won) {
+    ctx.fillStyle = 'rgba(40,15,0,0.7)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COL.winText;
+    ctx.font = 'bold 52px serif';
+    ctx.fillText('★  YOU WIN!  ★', W / 2, H / 2 - 20);
+    ctx.font = '24px serif';
+    ctx.fillStyle = COL.hud;
+    ctx.fillText(`Final Score: ${player.score}`, W / 2, H / 2 + 24);
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#a07030';
+    ctx.fillText('Press R to play again', W / 2, H / 2 + 56);
+  }
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(40,0,0,0.75)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COL.loseText;
+    ctx.font = 'bold 52px serif';
+    ctx.fillText('✖  GAME OVER  ✖', W / 2, H / 2 - 20);
+    ctx.font = '24px serif';
+    ctx.fillStyle = COL.hud;
+    ctx.fillText(`Score: ${player.score}`, W / 2, H / 2 + 24);
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#a07030';
+    ctx.fillText('Press R to restart', W / 2, H / 2 + 56);
+  }
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = `Score: ${String(player.score).padStart(4,'0')}`;
+  const full  = '❤️ '.repeat(player.lives);
+  const empty = '🤍 '.repeat(Math.max(0, 3 - player.lives));
+  document.getElementById('lives').textContent = full + empty;
+}
+
+// ── Game loop ─────────────────────────────────────────────────────────────────
+let last = null;
+
+function loop(ts) {
+  if (!last) last = ts;
+  const dt = Math.min((ts - last) / 1000, 0.05);
+  last = ts;
+
+  update(dt);
+
+  drawBackground();
+  drawPlatforms();
+  drawGoal();
+  drawCoins(ts / 1000);
+  for (const e of enemies) drawEnemy(e);
+  drawPlayer(player, ts / 1000);
+  drawParticles();
+  drawOverlay(ts / 1000);
+  updateHUD();
+
+  requestAnimationFrame(loop);
+}
+
+// restart
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyR' && (won || gameOver)) { initState(); last = null; }
+});
+
+initState();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
