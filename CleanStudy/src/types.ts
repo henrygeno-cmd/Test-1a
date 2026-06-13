@@ -27,8 +27,8 @@ export type Settings = {
   costFlashcards: number;
   costMemorize: number;
   costChat: number;
-  /** Conversational mode: read AI tutor replies out loud. */
-  speakReplies: boolean;
+  /** Default tutor mode: true = voice conversation (talk & listen), false = type & read. */
+  conversationMode: boolean;
 };
 
 export type ScanResult = {
@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   costFlashcards: 1,
   costMemorize: 1,
   costChat: 2,
-  speakReplies: true,
+  conversationMode: true,
 };
 
 export const FOLDER_COLORS = ['#FFE3E3', '#FFF3D6', '#E3F6E8', '#E0EFFF', '#F0E4FF', '#FFE8F4'];

@@ -76,13 +76,17 @@ export default function SettingsScreen(_props: Props) {
       <Text style={styles.sectionTitle}>AI Tutor</Text>
       <View style={styles.card}>
         <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>🔊 Read replies out loud</Text>
+          <Text style={styles.switchLabel}>🎙️ Start chats in conversation mode</Text>
           <Switch
-            value={s.speakReplies}
-            onValueChange={(v) => updateSettings({ speakReplies: v })}
+            value={s.conversationMode}
+            onValueChange={(v) => updateSettings({ conversationMode: v })}
             trackColor={{ true: theme.primary }}
           />
         </View>
+        <Text style={styles.example}>
+          On: talk to the tutor and it answers out loud. Off: type and read silently. You can
+          switch any time inside a chat.
+        </Text>
       </View>
 
       <Text style={styles.sectionTitle}>Claude API key</Text>

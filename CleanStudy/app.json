@@ -27,6 +27,13 @@
         {
           "cameraPermission": "CleanStudy uses the camera to check how clean your study space is."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "CleanStudy uses the microphone so you can talk to your AI tutor.",
+          "speechRecognitionPermission": "CleanStudy uses speech recognition to turn what you say into a question for your tutor."
+        }
       ]
     ]
   }
