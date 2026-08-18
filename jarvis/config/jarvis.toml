@@ -1,0 +1,38 @@
+# JARVIS configuration.
+#
+# `autonomy` is the important part: it is the *only* place unattended power is
+# granted. Levels, least to most: OBSERVE, SUGGEST, CONFIRM, NOTIFY, SILENT.
+# The trust ratchet can promote a domain over time but never past NOTIFY --
+# reaching SILENT is always a deliberate edit here.
+
+tick_seconds = 5.0
+allow_self_merge = true
+offline = false
+
+[autonomy]
+read      = "NOTIFY"
+files     = "CONFIRM"
+exec      = "CONFIRM"
+network   = "CONFIRM"
+system    = "SUGGEST"
+comms     = "SUGGEST"
+secrets   = "OBSERVE"
+financial = "OBSERVE"
+self      = "SUGGEST"
+
+[budget]
+actions_per_hour = 120
+writes_per_hour = 60
+usd_per_day = 10.0
+max_consecutive_failures = 4
+
+# Paths JARVIS must never touch without an explicit confirmation, whatever its
+# accumulated trust. Additive: these are checked on every action.
+protected_globs = [
+  "~/Documents/**",
+  "~/.ssh/**",
+  "~/.aws/**",
+  "~/.gnupg/**",
+  "~/Library/Keychains/**",
+  "~/.config/**",
+]

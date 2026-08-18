@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "A resident, self-improving assistant with a policy-gated capability model"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+model = ["anthropic>=0.40"]
+voice = ["openai-whisper", "sounddevice", "piper-tts"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+jarvis = "jarvis.interfaces.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
